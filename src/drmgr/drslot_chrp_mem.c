@@ -1502,7 +1502,7 @@ static int remove_lmb_from_node(struct ppcnuma_node *node, uint32_t count)
 	if (node->n_cpus)
 		numa.lmb_count -= unlinked;
 	else
-		numa.cpuless_node_count -= unlinked;
+		numa.cpuless_lmb_count -= unlinked;
 
 	if (!node->n_lmbs) {
 		node->ratio = 0; /* for sanity only */
@@ -1565,10 +1565,12 @@ static int remove_cpuless_lmbs(uint32_t count)
 				continue;
 
 			todo = (count * node->ratio) / 100;
-			todo = min(todo, node->n_lmbs);
-			/* Fix rounded value to 0 */
-			if (!todo && node->n_lmbs)
+			/* Fix rounded value to 0 and fix if a 0 ratio has been processed */
+			if ((!todo && node->n_lmbs) || count - this_loop < todo)
 				todo = (count - this_loop);
+
+			/* Never request more than available */
+			todo = min(todo, node->n_lmbs);
 
 			if (todo)
 				todo = remove_lmb_from_node(node, todo);
@@ -1583,7 +1585,10 @@ static int remove_cpuless_lmbs(uint32_t count)
 		if (!this_loop)
 			break;
 
-		count -= this_loop;
+		if (this_loop < count)
+			count -= this_loop;
+		else
+			count = 0;
 	}
 
 	say(DEBUG, "%d / %d LMBs removed from the CPU less nodes\n",
@@ -1751,6 +1756,7 @@ static int numa_mem_dlpar(uint32_t count)
 		 * Link the LMBs to their node
 		 * Update global counter
 		 */
+
 		lmb_list = get_lmbs(LMB_NORMAL_SORT);
 		if (lmb_list == NULL) {
 			clear_numa_lmb_links();
