@@ -903,7 +903,7 @@ add_device_tree_lmb(struct dr_node *lmb, struct lmb_list_head *lmb_list)
 		release_drc(lmb->drc_index, MEM_DEV);
 		return -1;
 	}
-	
+
 	if (lmb_list->drconf_buf) {
 		errno = 0;
 		rc = update_drconf_node(lmb, lmb_list, ADD);
@@ -957,7 +957,7 @@ add_device_tree_lmb(struct dr_node *lmb, struct lmb_list_head *lmb_list)
 	}
 
 	rc = get_mem_scns(lmb);
-	if (rc) 
+	if (rc)
 		remove_device_tree_lmb(lmb, lmb_list);
 
         return rc;
@@ -1698,38 +1698,31 @@ static void clear_numa_lmb_links(void)
 	int nid;
 	struct ppcnuma_node *node;
 
-	ppcnuma_foreach_node(&numa, nid, node)
+	ppcnuma_foreach_node(&numa, nid, node) {
 		node->lmbs = NULL;
+		node->n_lmbs = 0;
+	}
+}
+
+/*
+* This function prints out numa node LMB and CPU info to debug.
+*/
+static int dump_lmb_info()
+{
+	struct ppcnuma_node *node;
+	int nid;
+
+	ppcnuma_foreach_node(&numa, nid, node) {
+		say(DEBUG, "node %4d %4d CPUs %8d LMBs\n",
+			nid, node->n_cpus, node->n_lmbs);
+	}
+
+	return 0;
 }
 
 static int numa_based_remove(uint32_t count)
 {
-	struct lmb_list_head *lmb_list;
-	struct ppcnuma_node *node;
-	int nid;
 	uint32_t done = 0;
-
-	/*
-	 * Read the LMBs
-	 * Link the LMBs to their node
-	 * Update global counter
-	 */
-	lmb_list = get_lmbs(LMB_NORMAL_SORT);
-	if (lmb_list == NULL) {
-		clear_numa_lmb_links();
-		return -1;
-	}
-
-	if (!numa.node_count) {
-		clear_numa_lmb_links();
-		free_lmbs(lmb_list);
-		return -EINVAL;
-	}
-
-	ppcnuma_foreach_node(&numa, nid, node) {
-		say(INFO, "node %4d %4d CPUs %8d LMBs\n",
-		    nid, node->n_cpus, node->n_lmbs);
-	}
 
 	done += remove_cpuless_lmbs(count);
 	count -= done;
@@ -1738,9 +1731,48 @@ static int numa_based_remove(uint32_t count)
 
 	report_resource_count(done);
 
-	clear_numa_lmb_links();
-	free_lmbs(lmb_list);
 	return 0;
+}
+
+/*
+* This function wraps numa debug output and the numa based remove operation.
+* Refactors flow such that both add and remove operations call this function
+* given the right debug conditions.
+*/
+static int numa_mem_dlpar(uint32_t count)
+{
+	struct lmb_list_head *lmb_list;
+	int rc = 0;
+
+	build_numa_topology();
+	if (numa_enabled) {
+		/*
+		 * Read the LMBs
+		 * Link the LMBs to their node
+		 * Update global counter
+		 */
+		lmb_list = get_lmbs(LMB_NORMAL_SORT);
+		if (lmb_list == NULL) {
+			clear_numa_lmb_links();
+			return -1;
+		}
+
+		if (!numa.node_count) {
+			clear_numa_lmb_links();
+			free_lmbs(lmb_list);
+			return -EINVAL;
+		}
+
+		dump_lmb_info();
+
+		if (usr_action == REMOVE)
+			rc = numa_based_remove(count);
+
+		clear_numa_lmb_links();
+		free_lmbs(lmb_list);
+		numa_enabled = 0;
+	}
+	return rc;
 }
 
 int do_mem_kernel_dlpar(void)
@@ -1748,19 +1780,28 @@ int do_mem_kernel_dlpar(void)
 	char cmdbuf[128];
 	int rc, offset;
 
+	/* If ADD, don't perform numa build unless debug statements required */
+	if ((usr_action == REMOVE && usr_drc_count && !usr_drc_index) ||
+		(usr_action == ADD && output_level >= DEBUG)) {
+		/*
+		* This function call builds numa topology and prints debug statements
+		* but also performs the remove operation. It iterates over DRC indices
+		* rather than letting the kernel decide which LMBs to remove. The add
+		* operation is not performed in this function call.
+		*/
 
-	if (usr_action == REMOVE && usr_drc_count && !usr_drc_index) {
-		build_numa_topology();
-		if (numa_enabled) {
-			if (!numa_based_remove(usr_drc_count))
-				return 0;
-
+		if (!numa_mem_dlpar(usr_drc_count) && usr_action == REMOVE)
 			/*
-			 * If the NUMA based removal failed, lets try the legacy
-			 * way.
-			 */
+			* If numa operation was a success and we are removing then
+			* processing is finished.
+			*/
+			return 0;
+		else if (usr_action == REMOVE)
 			say(WARN, "Can't do NUMA based removal operation.\n");
-		}
+		/*
+		* If the NUMA based removal failed, lets try the legacy
+		* way.
+		*/
 	}
 
 	offset = sprintf(cmdbuf, "%s ", "memory");
@@ -1791,8 +1832,9 @@ int do_mem_kernel_dlpar(void)
 	 */
 	if (rc)
 		report_resource_count(0);
-	else
+	else {
 		report_resource_count(usr_drc_count);
+	}
 
 	return rc;
 }
