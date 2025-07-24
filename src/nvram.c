@@ -64,6 +64,7 @@
 #endif
 #include <stdbool.h>
 
+#include "librtasevent.h"
 #include "nvram.h"
 
 /**
@@ -890,22 +891,22 @@ dump_errlog(struct nvram *nvram)
  * dump_rtas_event_entry
  * @brief Dump event-scan data.
  *
- * Note: This is really only valid for PAPR machines.  To ensure 
+ * Note: This is really only valid for PAPR machines.  To ensure
  * the nvram command can run on all powerpc machines we dlopen the
  * the librtasevent library to dump the rtas event.
  *
  * @param data pointer to rtas error to dump
  * @param len length of data buffer
- * @return 0 on success, !0 otherwise 
+ * @return 0 on success, !0 otherwise
  */
 int
 dump_rtas_event_entry(char *data, int len)
 {
     void *rtas_event;
     void *handle;
-    void *(*parse_rtas_event)();
-    void (*rtas_print_event)();
-    void (*cleanup_rtas_event)();
+    void *(*parse_rtas_event)(char*, int);
+    void (*rtas_print_event)(FILE*, struct rtas_event*, int);
+    void (*cleanup_rtas_event)(struct rtas_event*);
 
     handle = dlopen("/usr/lib/librtasevent.so", RTLD_LAZY);
     if (handle == NULL)

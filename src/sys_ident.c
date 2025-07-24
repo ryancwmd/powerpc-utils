@@ -320,6 +320,8 @@ print_proc_sn_value(void)
 	return 0;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
 /**
  * print_sys_part_id
  * @brief Prints the unique system identification number
@@ -449,6 +451,7 @@ print_sys_part_id(void)
 
 	return 0;
 }
+#pragma GCC diagnostic pop
 
 int
 main (int argc, char **argv)
