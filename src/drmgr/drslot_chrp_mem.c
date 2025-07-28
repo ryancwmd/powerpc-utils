@@ -1558,6 +1558,9 @@ static int remove_cpuless_lmbs(uint32_t count)
 			break;
 
 		update_cpuless_node_ratio();
+		/* ==== FAKE ==== */
+		numa.nodes[6]->ratio = 0;
+		/* ==== FAKE ==== */
 
 		this_loop = 0;
 		ppcnuma_foreach_node(&numa, nid, node) {
@@ -1745,6 +1748,10 @@ static int numa_mem_dlpar(uint32_t count)
 	int rc = 0;
 
 	build_numa_topology();
+	/* ==== FAKE ==== */
+	numa.nodes[7]->n_cpus = 0;
+	/* ==== FAKE ==== */
+
 	if (numa_enabled) {
 		/*
 		 * Read the LMBs
@@ -1762,6 +1769,12 @@ static int numa_mem_dlpar(uint32_t count)
 			free_lmbs(lmb_list);
 			return -EINVAL;
 		}
+
+		/* ==== FAKE ==== */
+		struct ppcnuma_node* temp = numa.nodes[7];
+		numa.nodes[7] = numa.nodes[6];
+		numa.nodes[6] = temp;
+		/* ==== FAKE ==== */
 
 		dump_lmb_info();
 
